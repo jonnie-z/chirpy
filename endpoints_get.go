@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jonnie-z/chirpy/internal/database"
 )
 
 func addGetHandlers(c *apiConfig, mux *http.ServeMux) {
@@ -72,17 +74,59 @@ func (a *apiConfig) getChirp(w http.ResponseWriter, req *http.Request) {
 }
 
 func (a *apiConfig) getChirps(w http.ResponseWriter, req *http.Request) {
-	chirps, err := a.dbQueries.GetChirps(context.Background())
-	if err != nil {
-		log.Printf("Error getting Chirps: %s\n", err)
+	authorIdParam := req.URL.Query().Get("author_id")
+	sortParam := req.URL.Query().Get("sort")
+	var chirps []database.Chirp
 
-		respBody := errorResponse{
-			Error: "Something went wrong",
+	if authorIdParam != "" {
+		authorId, err := uuid.Parse(authorIdParam)
+		if err != nil {
+			log.Printf("Error getting Chirps: %s\n", err)
+
+			respBody := errorResponse{
+				Error: "Invalid author id",
+			}
+
+			respondError(w, 400, respBody)
+
+			return
 		}
 
-		respondError(w, 400, respBody)
+		callChirps, err := a.dbQueries.GetChirpsByUser(context.Background(), authorId)
+		if err != nil {
+			log.Printf("Error getting Chirps: %s\n", err)
 
-		return
+			respBody := errorResponse{
+				Error: "Something went wrong",
+			}
+
+			respondError(w, 400, respBody)
+
+			return
+		}
+
+		chirps = callChirps
+	} else {
+		callChirps, err := a.dbQueries.GetChirps(context.Background())
+		if err != nil {
+			log.Printf("Error getting Chirps: %s\n", err)
+
+			respBody := errorResponse{
+				Error: "Something went wrong",
+			}
+
+			respondError(w, 400, respBody)
+
+			return
+		}
+
+		chirps = callChirps
+	}
+
+	if sortParam == "desc" {
+		sort.Slice(chirps, func(i, j int) bool {
+			return chirps[i].CreatedAt.After(chirps[j].CreatedAt)
+		})
 	}
 
 	respBody := []chirpResponse{}
